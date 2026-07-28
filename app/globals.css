@@ -1,0 +1,51 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Plumbline tokens — same values as the Console's globals.css. Dark is the
+   brand default; :root IS the dark theme. */
+:root {
+  --navy-hsl: 217 31% 15%;      /* #1b2433 */
+  --background: 217 31% 15%;
+  --peak: 221 14% 19%;          /* #292d36 */
+  --card: 219 26% 17%;
+  --foreground: 210 17% 95%;
+  --border: 218 16% 27%;
+  --muted: 221 14% 24%;
+  --muted-foreground: 216 14% 66%;  /* #9ba5b4 slate */
+  --primary: 36 42% 63%;            /* #c8a878 gold */
+  --accent: 37 52% 68%;             /* #d8b884 gold-bright */
+  --destructive: 0 55% 48%;
+}
+
+* { @apply border-border; }
+
+html { color-scheme: dark; }
+
+body {
+  @apply bg-navy text-foreground antialiased;
+  background-image: linear-gradient(180deg, hsl(var(--peak)) 0%, hsl(var(--background)) 38%);
+  background-attachment: fixed;
+}
+
+h1, h2, h3, h4 { @apply font-display; }
+
+.eyebrow {
+  @apply font-mono text-[0.65rem] uppercase tracking-[0.18em] text-muted-foreground;
+}
+.kpi-label {
+  @apply font-mono text-[0.6rem] uppercase tracking-[0.14em] text-muted-foreground;
+}
+.diamond-list li {
+  @apply relative pl-[18px];
+}
+.diamond-list li::before {
+  content: "\25C6";
+  @apply absolute left-0 top-[7px] text-[8px] leading-none text-gold;
+}
+
+@media print {
+  body { background: #fff !important; color: #111; }
+  .no-print { display: none !important; }
+  .print-block { display: block !important; }
+}

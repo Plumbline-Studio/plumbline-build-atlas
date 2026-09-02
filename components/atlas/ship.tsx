@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { Check, Plus } from "lucide-react";
 
+import { agenticChain, agenticConflicts } from "@/lib/agentic-engine";
 import { chainSummary, deliveryChain, type StageAdvice } from "@/lib/delivery-engine";
 import type { Destination } from "@/lib/destination";
 import type { Constraints, ContextProfile, Tray } from "@/lib/engine";
@@ -40,6 +41,11 @@ export function ShipView({
     [archetype, profile, constraints, tray, destination],
   );
   const [open, setOpen] = useState<string | null>(chain.find((s) => s.verdict === "needed")?.stage ?? null);
+  const agentic = useMemo(
+    () => agenticChain(archetype, profile, constraints, tray, destination),
+    [archetype, profile, constraints, tray, destination],
+  );
+  const agenticFlags = useMemo(() => agenticConflicts(tray, destination), [tray, destination]);
 
   const detail = chain.find((s) => s.stage === open) ?? null;
 
@@ -81,6 +87,73 @@ export function ShipView({
       <section>
         <SectionLabel>How the pieces hand off</SectionLabel>
         <CompositionMap chain={chain} />
+      </section>
+
+      <section className="space-y-3">
+        <SectionLabel>If agents run this</SectionLabel>
+        <div className="rounded-lg border border-border bg-card/60 p-4">
+          <p className="font-display text-lg font-semibold">{agentic.call.headline}</p>
+          <ul className="mt-2 space-y-1">
+            {agentic.call.reasons.map((r, i) => (
+              <li key={i} className="text-sm text-muted-foreground">
+                {r.text}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-3 border-t border-border/60 pt-2.5 text-xs text-muted-foreground">
+            Agents collide over shared state, not over time. Two writers on one artefact is the
+            failure everyone calls &ldquo;overstepping&rdquo;, and scheduling them does not fix it.
+          </p>
+        </div>
+
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+          {agentic.stages.map((st) => {
+            const shown = st.chosen[0] ?? st.recommended;
+            return (
+              <div
+                key={st.stage}
+                className={`rounded-lg border p-3 ${
+                  st.verdict === "not-yet" ? "border-dashed border-border/60" : "border-gold/50 bg-gold/5"
+                }`}
+              >
+                <p className="text-sm font-semibold">{st.label}</p>
+                <p className="text-[0.7rem] leading-snug text-muted-foreground">{st.question}</p>
+                <p className="mt-1.5 text-xs">
+                  {st.verdict === "not-yet" ? (
+                    <span className="text-muted-foreground">Not yet</span>
+                  ) : (
+                    <span className={st.chosen.length ? "text-foreground" : "italic text-muted-foreground"}>
+                      {shown?.name ?? "—"}
+                    </span>
+                  )}
+                </p>
+              </div>
+            );
+          })}
+        </div>
+
+        {agenticFlags.length ? (
+          <div className="space-y-1.5">
+            {agenticFlags.map((f, i) => (
+              <div
+                key={i}
+                className={`rounded-md border p-2.5 text-xs ${
+                  f.severity === "finding"
+                    ? "border-rose-500/30 bg-rose-500/5 text-rose-300"
+                    : "border-gold-bright/30 bg-gold-bright/5 text-gold-bright"
+                }`}
+              >
+                <b>{f.severity === "finding" ? "Finding: " : "Caution: "}</b>
+                {f.text}
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        <p className="text-xs text-muted-foreground">
+          Browse the full axis in the <b className="text-foreground">Agentic</b> volume to add pieces
+          to this chain.
+        </p>
       </section>
     </div>
   );

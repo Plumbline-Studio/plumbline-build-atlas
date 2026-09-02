@@ -12,6 +12,7 @@
 // is being fashionable.
 
 import type { Destination } from "@/lib/destination";
+import type { Standing } from "@/lib/stack-atlas-reference";
 import { growthFactor } from "@/lib/destination";
 import {
   DELIVERY,
@@ -55,12 +56,30 @@ export interface StageAdvice {
   coveredBy?: string;
 }
 
+/**
+ * The shape the scorers actually need. Both the delivery volume and the agentic
+ * axis satisfy it, so the sizing, constraint and destination arguments are
+ * written once rather than forked per volume.
+ */
+export interface ScorableEntry {
+  name: string;
+  stage: string;
+  standing: Standing;
+  scale: DeliveryScale;
+  whatItIs: string;
+  whenYouNeedIt: string;
+  notYet: string;
+  needs: string[];
+  feeds: string[];
+  instead: string[];
+}
+
 /** Platform runtimes take three whole stages off the board. Worth naming. */
 const PLATFORM_HOSTS =
   /vercel|netlify|cloudflare|workers|lambda|fly\.io|\bfly\b|railway|render|heroku|app engine|cloud run|amplify/i;
 
 /** How much the project's size argues against a piece built for a bigger one. */
-function scaleFit(entry: DeliveryEntry, weight: ProjectWeight | null, profile: ContextProfile): Reason[] {
+export function scaleFit(entry: ScorableEntry, weight: ProjectWeight | null, profile: ContextProfile): Reason[] {
   const out: Reason[] = [];
   const small = weight === "Small";
   const large = weight === "Large";
@@ -82,7 +101,7 @@ function scaleFit(entry: DeliveryEntry, weight: ProjectWeight | null, profile: C
   return out;
 }
 
-function constraintFit(entry: DeliveryEntry, c: Constraints, profile: ContextProfile): Reason[] {
+export function constraintFit(entry: ScorableEntry, c: Constraints, profile: ContextProfile): Reason[] {
   const out: Reason[] = [];
   const n = entry.name;
 
@@ -135,7 +154,7 @@ function constraintFit(entry: DeliveryEntry, c: Constraints, profile: ContextPro
   return out;
 }
 
-function destinationFit(entry: DeliveryEntry, d: Destination | null): Reason[] {
+export function destinationFit(entry: ScorableEntry, d: Destination | null): Reason[] {
   if (!d) return [];
   const out: Reason[] = [];
   const n = entry.name;
@@ -197,17 +216,17 @@ const STAGE_OF = new Map(DELIVERY.map((e) => [e.name, e.stage]));
  * needs a pipeline, not GitHub Actions specifically, so anything filling the same
  * stage satisfies it — which is what `instead` already says about substitutes.
  */
-function satisfied(need: string, available: Set<string>): boolean {
+function satisfied(need: string, available: Set<string>, stageOf: Map<string, string>): boolean {
   if (available.has(need)) return true;
-  const stage = STAGE_OF.get(need);
+  const stage = stageOf.get(need);
   if (!stage) return false;
-  for (const a of available) if (STAGE_OF.get(a) === stage) return true;
+  for (const a of available) if (stageOf.get(a) === stage) return true;
   return false;
 }
 
-function needsFit(entry: DeliveryEntry, available: Set<string>): Reason[] {
+export function needsFit(entry: ScorableEntry, available: Set<string>, stageOf: Map<string, string> = STAGE_OF): Reason[] {
   if (entry.needs.length === 0) return [];
-  const missing = entry.needs.filter((n) => !satisfied(n, available));
+  const missing = entry.needs.filter((n) => !satisfied(n, available, stageOf));
   if (missing.length === 0) {
     return [{ delta: 6, text: `Completes the chain from ${entry.needs.join(", ")}` }];
   }

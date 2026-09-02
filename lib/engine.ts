@@ -432,6 +432,8 @@ export interface Tray {
   integrations: string[];
   /** How it ships and how you watch it — names from the delivery volume. */
   delivery: string[];
+  /** How the AI work is coordinated — names from the agentic volume. */
+  agentic: string[];
   /** Free-text: the constraint that decided it. */
   rationale: string;
 }
@@ -445,6 +447,7 @@ export const EMPTY_TRAY: Tray = {
   auth: null,
   integrations: [],
   delivery: [],
+  agentic: [],
   rationale: "",
 };
 
@@ -469,7 +472,7 @@ export function trayConflicts(
 ): Conflict[] {
   const out: Conflict[] = [];
   const all = tokensOf(
-    [tray.language, tray.framework, tray.data, tray.hosting, tray.auth, ...tray.integrations, ...tray.delivery]
+    [tray.language, tray.framework, tray.data, tray.hosting, tray.auth, ...tray.integrations, ...tray.delivery, ...tray.agentic]
       .filter(Boolean)
       .join(" "),
   );

@@ -8,6 +8,7 @@ import {
   LANGUAGES,
   LANGUAGE_CATEGORIES,
 } from "@/lib/stack-atlas-languages";
+import { AGENTIC, AGENTIC_GROUPS } from "@/lib/stack-atlas-agentic";
 import {
   DELIVERY,
   DELIVERY_GROUPS,
@@ -32,7 +33,7 @@ import { Badge, Chip, toneClass } from "@/components/atlas/ui";
 type SlotAction =
   | { slot: "language" | "data" | "hosting" | "auth"; value: string }
   | { slot: "integrations"; value: string }
-  | { slot: "delivery"; value: string }
+  | { slot: "delivery" | "agentic"; value: string }
   | { slot: "base"; stackName: string };
 
 interface RefRow {
@@ -196,6 +197,36 @@ export const VOLUMES: Volume[] = [
       action: { slot: "delivery", value: d.name },
     })),
   },
+  {
+    key: "agentic",
+    label: "Agentic",
+    placeholder: "Context, routing, execution, coordination, budget…",
+    groups: AGENTIC_GROUPS,
+    rows: AGENTIC.map((a) => ({
+      name: a.name,
+      group: a.group,
+      toneLabel: a.standing,
+      chip: a.regime === "both" ? "Either regime" : a.regime === "sequential" ? "Sequential" : "Concurrent",
+      what: a.whatItIs,
+      pairs: [
+        ["Where you meet it", a.whereYouMeetIt],
+        ["When you need it", a.whenYouNeedIt],
+        ["Not yet, if", a.notYet],
+        [
+          "Fits with",
+          [
+            a.needs.length ? `needs ${a.needs.join(", ")}` : "",
+            a.feeds.length ? `feeds ${a.feeds.join(", ")}` : "",
+            a.instead.length ? `instead of ${a.instead.join(", ")}` : "",
+          ]
+            .filter(Boolean)
+            .join(" · ") || "stands alone",
+        ],
+      ] as [string, string][],
+      risk: a.watchFor,
+      action: { slot: "agentic", value: a.name },
+    })),
+  },
 ];
 
 export const REFERENCE_TOTAL = VOLUMES.reduce((n, v) => n + v.rows.length, 0);
@@ -251,7 +282,7 @@ export function VolumeBrowser({
       });
       return;
     }
-    if (action.slot === "integrations" || action.slot === "delivery") {
+    if (action.slot === "integrations" || action.slot === "delivery" || action.slot === "agentic") {
       const current = tray[action.slot];
       if (!current.includes(action.value)) {
         setTray({ ...tray, [action.slot]: [...current, action.value] });
@@ -264,7 +295,7 @@ export function VolumeBrowser({
   function isInTray(action?: SlotAction): boolean {
     if (!action) return false;
     if (action.slot === "base") return false;
-    if (action.slot === "integrations" || action.slot === "delivery")
+    if (action.slot === "integrations" || action.slot === "delivery" || action.slot === "agentic")
       return tray[action.slot].includes(action.value);
     return tray[action.slot] === action.value;
   }

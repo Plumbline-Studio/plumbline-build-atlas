@@ -2,6 +2,7 @@
 
 import { AlertTriangle, FileText, X } from "lucide-react";
 
+import type { Destination } from "@/lib/destination";
 import {
   trayConflicts,
   type Constraints,
@@ -30,18 +31,20 @@ export function TrayRail({
   setTray,
   profile,
   constraints,
+  destination,
   onBrief,
 }: {
   tray: Tray;
   setTray: (t: Tray) => void;
   profile: ContextProfile;
   constraints: Constraints;
+  destination: Destination | null;
   onBrief: () => void;
 }) {
   const archetype = tray.archetypeId
     ? ALL_ARCHETYPES.find((a) => a.id === tray.archetypeId)
     : null;
-  const conflicts = trayConflicts(tray, profile, constraints);
+  const conflicts = trayConflicts(tray, profile, constraints, destination);
   const filled = SLOTS.filter((s) => tray[s.key]).length + (tray.integrations.length > 0 ? 1 : 0);
 
   return (

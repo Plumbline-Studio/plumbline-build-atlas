@@ -15,6 +15,7 @@
 // Every score adjustment carries its reason as a sentence. The ranking is only
 // trustworthy if you can see why it moved.
 
+import { destinationReasons, growthFactor, trajectoryNote, type Destination } from "@/lib/destination";
 import type { ProjectArchetype, StackOption } from "@/lib/stack-atlas";
 import { STACKS, type StackEntry } from "@/lib/stack-atlas-reference";
 
@@ -158,9 +159,23 @@ export interface Reason {
 
 export interface ScoredOption {
   option: StackOption;
+  /**
+   * Score against the project as it is today. Still called `score` because it
+   * is what every existing caller means, and because with no destination set
+   * it is the only score there is.
+   */
   score: number;
   reasons: Reason[];
   houseStack: boolean;
+  /**
+   * The second pass: the same option scored against where the project is
+   * going. Null when no destination is set — the atlas does not guess at a
+   * trajectory nobody gave it.
+   */
+  scoreThen: number | null;
+  destinationReasons: Reason[];
+  /** One sentence on what the gap between the two passes means. */
+  trajectory: string | null;
 }
 
 // Org-fit adjustments per token. Sparse by design: only where the org type
@@ -302,6 +317,7 @@ export function rankOptions(
   archetype: ProjectArchetype,
   profile: ContextProfile,
   constraints: Constraints,
+  destination: Destination | null = null,
 ): ScoredOption[] {
   const estate = estateTokens(profile);
   const estateRuntimes = new Set([...estate.keys()].filter((t) => RUNTIME_TOKENS.has(t)));
@@ -376,15 +392,32 @@ export function rankOptions(
     const houseStack =
       majorityTokens.size > 0 && [...tokens].filter((t) => majorityTokens.has(t)).length >= 2;
 
+    // Second pass. The destination's reasons are *added* to the present-tense
+    // ones rather than replacing them: the question is not "what would we pick
+    // if we were already there", it is "what does today's answer cost us on the
+    // way". Sorting still uses the present-tense score, so an unset destination
+    // changes nothing about the order.
+    const destReasons = destinationReasons(option, destination, tokens);
+    const scoreThen = destination ? score + destReasons.reduce((n, r) => n + r.delta, 0) : null;
+
     return {
       option,
       score,
       houseStack,
       reasons: reasons.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta)),
+      scoreThen,
+      destinationReasons: destReasons.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta)),
+      trajectory: scoreThen === null ? null : trajectoryNote(score, scoreThen, destination),
     };
   });
 
-  return scored.sort((a, b) => b.score - a.score);
+  // Ranked by where the project is going when a destination is set, and by
+  // today when it is not. This is the whole behavioural change: the same
+  // archetype can now surface a different winner because the answer to
+  // "for how long" changed.
+  return scored.sort((a, b) =>
+    a.scoreThen !== null && b.scoreThen !== null ? b.scoreThen - a.scoreThen : b.score - a.score,
+  );
 }
 
 /* --------------------------------- tray --------------------------------- */
@@ -424,6 +457,7 @@ export function trayConflicts(
   tray: Tray,
   profile: ContextProfile,
   constraints: Constraints,
+  destination: Destination | null = null,
 ): Conflict[] {
   const out: Conflict[] = [];
   const all = tokensOf(
@@ -467,6 +501,47 @@ export function trayConflicts(
       severity: "caution",
       text: "PCI scope with no processor in the stack — add Stripe or a platform, or budget a QSA.",
     });
+  }
+
+  // Destination rules. These can only fire once someone has said where the
+  // project is going, which is exactly why they were impossible before.
+  if (destination) {
+    if (destination.horizon === "platform" && (all.has("mongo") || all.has("firebase"))) {
+      out.push({
+        severity: "finding",
+        text: "A platform horizon on a database with no row-level security: every tenant boundary is application code, and a platform has thousands of them. This is the one to change while changing it is still cheap.",
+      });
+    }
+    if (destination.horizon === "platform" && (all.has("nocode") || all.has("wordpress") || all.has("shopify"))) {
+      out.push({
+        severity: "finding",
+        text: "Nobody builds on top of this. If others are meant to extend it, a hosted site builder is the wrong foundation — say so now rather than after the first integration request.",
+      });
+    }
+    if (destination.autonomy === "unattended" && all.has("nocode")) {
+      out.push({
+        severity: "finding",
+        text: "Unattended and unobservable. When an automation canvas fails at 3am there is no stack trace and no test to write — pick something you can debug asleep.",
+      });
+    }
+    if (destination.sovereignty === "portable" && (all.has("supabase") || all.has("firebase") || all.has("vercel") || all.has("shopify"))) {
+      out.push({
+        severity: "caution",
+        text: "Portable is the stated destination, and core data or core behaviour sits inside one vendor. That is a fine trade — but it is a trade, and it belongs in the brief.",
+      });
+    }
+    if (destination.growth === "tenants" && all.has("sqlite")) {
+      out.push({
+        severity: "caution",
+        text: "One writer at a time, and tenants are the growth axis. The ceiling arrives without warning and it arrives during business hours.",
+      });
+    }
+    if (growthFactor(destination) >= 3 && (all.has("nocode") || all.has("sqlite"))) {
+      out.push({
+        severity: "caution",
+        text: `A ${Math.round(growthFactor(destination))}-order-of-magnitude climb on this foundation is a rebuild, not a scale-up. Budget it deliberately or choose differently now.`,
+      });
+    }
   }
 
   if (profile.estate.length > 0 && tray.language) {
@@ -584,7 +659,12 @@ export function suggestArchetypes(answers: Record<string, string>): { id: string
 
 /* ------------------------------ persistence ----------------------------- */
 
-const KEYS = { profile: "atlas.profile.v1", tray: "atlas.tray.v1", constraints: "atlas.constraints.v1" };
+const KEYS = {
+  profile: "atlas.profile.v1",
+  tray: "atlas.tray.v1",
+  constraints: "atlas.constraints.v1",
+  destination: "atlas.destination.v1",
+};
 
 export function load<T>(key: keyof typeof KEYS, fallback: T): T {
   if (typeof window === "undefined") return fallback;

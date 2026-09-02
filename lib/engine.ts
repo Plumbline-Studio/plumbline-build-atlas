@@ -16,7 +16,7 @@
 // trustworthy if you can see why it moved.
 
 import { destinationReasons, growthFactor, trajectoryNote, type Destination } from "@/lib/destination";
-import type { ProjectArchetype, StackOption } from "@/lib/stack-atlas";
+import { ARCHETYPES as ALL_ARCHETYPES_FOR_WEIGHT, type ProjectArchetype, type StackOption } from "@/lib/stack-atlas";
 import { STACKS, type StackEntry } from "@/lib/stack-atlas-reference";
 
 /* ------------------------------- profile -------------------------------- */
@@ -430,6 +430,8 @@ export interface Tray {
   hosting: string | null;
   auth: string | null;
   integrations: string[];
+  /** How it ships and how you watch it — names from the delivery volume. */
+  delivery: string[];
   /** Free-text: the constraint that decided it. */
   rationale: string;
 }
@@ -442,6 +444,7 @@ export const EMPTY_TRAY: Tray = {
   hosting: null,
   auth: null,
   integrations: [],
+  delivery: [],
   rationale: "",
 };
 
@@ -452,6 +455,11 @@ export interface Conflict {
 
 const AVOID_PROTOCOLS = ["FTP", "Telnet", "TFTP", "HTTP/1.1", "XML-RPC", "LDAP", "HTTP Basic auth", "NTLM"];
 
+/** Archetypes the atlas itself weights Small — computed once, not hand-listed. */
+const SMALL_ARCHETYPES = new Set(
+  ALL_ARCHETYPES_FOR_WEIGHT.filter((a) => a.weight === "Small").map((a) => a.id),
+);
+
 /** The tray argues back. Rules only fire on data the tray actually holds. */
 export function trayConflicts(
   tray: Tray,
@@ -461,7 +469,7 @@ export function trayConflicts(
 ): Conflict[] {
   const out: Conflict[] = [];
   const all = tokensOf(
-    [tray.language, tray.framework, tray.data, tray.hosting, tray.auth, ...tray.integrations]
+    [tray.language, tray.framework, tray.data, tray.hosting, tray.auth, ...tray.integrations, ...tray.delivery]
       .filter(Boolean)
       .join(" "),
   );
@@ -501,6 +509,64 @@ export function trayConflicts(
       severity: "caution",
       text: "PCI scope with no processor in the stack — add Stripe or a platform, or budget a QSA.",
     });
+  }
+
+  // Delivery rules. The tray argues about how the thing ships, not just what
+  // it is made of — which is the half that used to be invisible.
+  {
+    const d = new Set(tray.delivery);
+    const has = (...names: string[]) => names.some((n) => d.has(n));
+
+    // The recording's own car-dashboard line, made mechanical.
+    if (d.has("Grafana") && !has("Prometheus", "Loki", "ELK / OpenSearch", "OpenTelemetry")) {
+      out.push({
+        severity: "finding",
+        text: "Grafana collects nothing — it is the dashboard in a car, and the engine and sensors produce the data. With no Prometheus, Loki or OpenTelemetry in the chain this is an empty screen.",
+      });
+    }
+
+    const INTEGRATE = ["GitHub Actions", "GitLab CI/CD", "Jenkins", "CircleCI", "Azure Pipelines", "Argo CD"];
+    if (tray.delivery.length > 0 && !INTEGRATE.some((n) => d.has(n))) {
+      out.push({
+        severity: "finding",
+        text: "Nothing runs on push. Without a pipeline there is no rollback and no record of what shipped — which is the finding an auditor writes down, and the reason a bad Friday becomes a bad weekend.",
+      });
+    }
+
+    if (has("Kubernetes", "Managed Kubernetes", "Helm", "Argo CD")) {
+      if (constraints.maintainer === "client-nontech") {
+        out.push({
+          severity: "finding",
+          text: "Kubernetes with nobody technical at the client: this hands over a platform team's job to people who do not have one. Say what happens on day one after the engagement ends.",
+        });
+      } else if (tray.archetypeId && SMALL_ARCHETYPES.has(tray.archetypeId)) {
+        out.push({
+          severity: "caution",
+          text: "Cluster operations on a Small project is more machine than the problem needs. If it is a deliberate investment in the next three projects, write that down — otherwise a platform runtime does this for free.",
+        });
+      }
+    }
+
+    if (has("Terraform", "Vault", "Consul", "Packer", "Nomad")) {
+      out.push({
+        severity: "caution",
+        text: "HashiCorp tooling is BUSL-1.1 and IBM-owned since 2025. Free for internal use; wrapping it in something you sell is a licensing conversation. OpenTofu and OpenBao are the MPL forks under the Linux Foundation.",
+      });
+    }
+
+    if (d.has("ELK / OpenSearch") && constraints.budget === "lean") {
+      out.push({
+        severity: "caution",
+        text: "Elasticsearch is memory- and storage-hungry, and the bill grows with log volume rather than traffic. On a lean budget this is the line item that outgrows the application it watches — Loki indexes labels instead and costs a fraction.",
+      });
+    }
+
+    if (d.has("Jenkins")) {
+      out.push({
+        severity: "caution",
+        text: "Jenkins is losing share every year and the cost is the plugin surface — teams leave when a plugin breaks an upgrade, or when the one person who understood the controller resigns. Fine to inherit; choosing it new needs an argument.",
+      });
+    }
   }
 
   // Destination rules. These can only fire once someone has said where the

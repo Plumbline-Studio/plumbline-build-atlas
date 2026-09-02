@@ -17,6 +17,7 @@ import {
   type ContextProfile,
   type Tray,
 } from "@/lib/engine";
+import { chainSummary, deliveryChain } from "@/lib/delivery-engine";
 import { ALL_ARCHETYPES } from "@/lib/stack-atlas-families";
 import { Button, SectionLabel } from "@/components/atlas/ui";
 
@@ -62,8 +63,39 @@ function briefMarkdown(
     `| Hosting | ${tray.hosting ?? "—"} |`,
     `| Auth | ${tray.auth ?? "—"} |`,
     `| Integrations | ${tray.integrations.length ? tray.integrations.join(", ") : "—"} |`,
+    `| Delivery | ${tray.delivery.length ? tray.delivery.join(", ") : "—"} |`,
     "",
   ];
+
+  // The delivery chain, including the stages deliberately left empty. A brief
+  // that says "no orchestration layer, and here is the condition under which
+  // that changes" is defensible; one that is silent about it is not.
+  {
+    const a2 = ALL_ARCHETYPES.find((x) => x.id === tray.archetypeId) ?? null;
+    const chain = deliveryChain(a2, profile, constraints, tray, destination);
+    lines.push("## How it ships", `*${chainSummary(chain)}*`, "", "| Stage | Verdict | Answer |", "| --- | --- | --- |");
+    for (const s2 of chain) {
+      const answer =
+        s2.verdict === "covered"
+          ? `Covered by ${s2.coveredBy}`
+          : s2.chosen.length
+            ? s2.chosen.map((c) => c.name).join(", ")
+            : s2.recommended
+              ? `${s2.recommended.name} (recommended, not yet chosen)`
+              : "—";
+      const verdict = s2.verdict === "not-yet" ? "Not yet" : s2.verdict === "covered" ? "Covered" : "Needed";
+      lines.push(`| ${s2.label} — ${s2.question} | ${verdict} | ${answer} |`);
+    }
+    lines.push("");
+    const deferred = chain.filter((x) => x.verdict === "not-yet");
+    if (deferred.length) {
+      lines.push("### Deliberately not yet", "");
+      for (const x of deferred) {
+        lines.push(`- **${x.label}.** ${x.reasons.map((r) => r.text).join(" ")}`);
+      }
+      lines.push("");
+    }
+  }
 
   if (tray.rationale.trim()) {
     lines.push("## Why this stack", tray.rationale.trim(), "");
@@ -121,6 +153,7 @@ export function Brief({
   const a = ALL_ARCHETYPES.find((x) => x.id === tray.archetypeId);
   const conflicts = trayConflicts(tray, profile, constraints, destination);
   const doors = destination ? doorsFor(destination) : [];
+  const chain = deliveryChain(a ?? null, profile, constraints, tray, destination);
 
   async function copy() {
     try {
@@ -179,6 +212,7 @@ export function Brief({
                 ["Hosting", tray.hosting],
                 ["Auth", tray.auth],
                 ["Integrations", tray.integrations.join(", ") || null],
+                ["Delivery", tray.delivery.join(", ") || null],
               ] as [string, string | null][]
             ).map(([label, value]) => (
               <div key={label} className="rounded-md border border-border/70 p-3">
@@ -195,6 +229,44 @@ export function Brief({
             <p className="text-sm opacity-90">{tray.rationale}</p>
           </div>
         ) : null}
+
+        <div>
+          <SectionLabel>How it ships</SectionLabel>
+          <p className="mb-2.5 text-sm text-muted-foreground">{chainSummary(chain)}</p>
+          <div className="overflow-x-auto rounded-md border border-border/70">
+            <table className="w-full min-w-[34rem] border-collapse text-sm">
+              <tbody>
+                {chain.map((s2) => (
+                  <tr key={s2.stage} className="border-b border-border/50 align-baseline last:border-b-0">
+                    <td className="px-3 py-2 font-medium">{s2.label}</td>
+                    <td className="px-3 py-2 whitespace-nowrap">
+                      <span
+                        className={`inline-flex items-center rounded-full border px-2 py-0.5 font-mono text-[0.6rem] uppercase tracking-wider ${
+                          s2.verdict === "needed"
+                            ? "border-gold/50 bg-gold/15 text-gold-bright"
+                            : s2.verdict === "covered"
+                              ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
+                              : "border-border text-muted-foreground"
+                        }`}
+                      >
+                        {s2.verdict === "not-yet" ? "Not yet" : s2.verdict === "covered" ? "Covered" : "Needed"}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-muted-foreground">
+                      {s2.verdict === "covered"
+                        ? `Covered by ${s2.coveredBy}`
+                        : s2.chosen.length
+                          ? s2.chosen.map((c) => c.name).join(", ")
+                          : s2.recommended
+                            ? `${s2.recommended.name} — recommended, not yet chosen`
+                            : "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
 
         {doors.length ? (
           <div>

@@ -14,23 +14,40 @@ its reason. Two inputs most stack-pickers ignore are first-class here:
   that introduces a new runtime is penalised and says so. Diverging is allowed
   — the point is that it happens on purpose, in writing.
 
-Behind the workbench: 21 project archetypes and 394 reference entries across
-six volumes (languages, full stacks, protocols, formats, auth, infrastructure),
-each answering *what is it, where do you meet it, what should you watch for* —
-with an "add to stack" action so the reference is a parts bin, not trivia.
+Behind the workbench: 21 project archetypes and 438 reference entries across
+seven volumes (languages, full stacks, protocols, formats, auth, infrastructure,
+delivery), each answering *what is it, where do you meet it, what should you
+watch for* — with an "add to stack" action so the reference is a parts bin, not
+trivia.
+
+**Two inputs that are not about today.** A *destination* (what this becomes,
+what actually grows, how far it travels, who has to be able to run it) scores
+every option a second time and prints a **lock-in ledger**: which doors this
+stack closes, at what scale, and what the exit costs. And the *delivery* volume
+answers the question the other six never did — how does it ship, and how do you
+know it's alive — as a guided pass over ten stages, each of which can come back
+"not yet" with the trigger attached.
 
 ## The flow
 
-1. **Start** — pick a project type, answer five questions if it has no name
+1. **Destination** — where this has to be in three years. Skippable, and
+   skipping is a real answer: without one the atlas ranks on today alone and
+   says so.
+2. **Start** — pick a project type, answer five questions if it has no name
    yet, or open the Legacy estate audit.
-2. **Context** — org type, hosting/compliance/team/budget constraints, and
+3. **Context** — org type, hosting/compliance/team/budget constraints, and
    your existing estate. The ranking re-argues itself as you change these.
-3. **Assemble** — "Use this stack" fills the tray; the reference volumes fill
+4. **Assemble** — "Use this stack" fills the tray; the reference volumes fill
    the remaining slots (data, hosting, auth, integrations).
-4. **The tray argues back** — FTP is called a finding, Mongo under a
+5. **The tray argues back** — FTP is called a finding, Mongo under a
    multi-tenant portal a caution, a new-runtime divergence gets flagged.
-5. **Brief** — one page out: picks, reasons, flags, open questions. Copy as
-   Markdown or print.
+6. **Ship** — the ten delivery stages, each argued to *needed*, *covered* (your
+   host already owns it) or *not yet* (with what changes that). The map is drawn
+   from each entry's own `needs`/`feeds`/`instead`, so it cannot drift from the
+   reasoning.
+7. **Brief** — one page out: picks, reasons, flags, the delivery chain including
+   what was deliberately deferred, the lock-in ledger, and the open questions.
+   Copy as Markdown or print.
 
 ## Deploy
 
@@ -44,7 +61,9 @@ Zero-config Vercel (same stack as `dashboard.toolwright.dev`):
 Brand logos are inlined at build time (`prebuild` runs
 `scripts/build-stack-marks.mjs` against the `simple-icons` package), so the
 repo stays free of generated SVG path data and the site makes no runtime
-CDN requests.
+CDN requests. `prebuild` also runs `scripts/check-delivery-edges.mjs`, which
+fails the build on a delivery entry referencing a name that does not exist —
+a typo there would silently drop a line from the map rather than erroring.
 
 ## Local
 
@@ -58,12 +77,17 @@ npm run build      # inlines brand marks, typechecks, builds
 
 ```
 lib/engine.ts                 scoring, context profile, conflicts, wizard
+lib/destination.ts            trajectory, dual scoring, the lock-in ledger
+lib/delivery-engine.ts        the ten-stage chain and its verdicts
 lib/stack-atlas.ts            20 project archetypes
 lib/stack-atlas-families.ts   family grouping + the legacy estate audit
 lib/stack-atlas-languages.ts  168 languages
 lib/stack-atlas-reference.ts  protocols / formats / auth / infra / stacks (226)
+lib/stack-atlas-delivery.ts   delivery & operations (44, with edges)
 lib/stack-atlas-marks.ts      name → Simple Icons slug map (MARKS generated)
-components/atlas/             workbench, context panel, wizard, tray, volumes, brief
+components/atlas/             workbench, destination, context panel, wizard,
+                              tray, volumes, ship, delivery map, brief
+scripts/                      brand marks + delivery edge validation (prebuild)
 ```
 
 ## Weaving into the Plumbline Console

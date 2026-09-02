@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ArrowLeft, Compass, HelpCircle, Home } from "lucide-react";
+import { ArrowLeft, Compass, HelpCircle, Home, Truck } from "lucide-react";
 
 import {
   DEFAULT_CONSTRAINTS,
@@ -26,6 +26,7 @@ import {
 import { Brief } from "@/components/atlas/brief";
 import { ContextPanel } from "@/components/atlas/context-panel";
 import { DestinationStep } from "@/components/atlas/destination";
+import { ShipView } from "@/components/atlas/ship";
 import { Mark } from "@/components/atlas/mark";
 import { TrayRail } from "@/components/atlas/tray";
 import { Badge, Button, SectionLabel } from "@/components/atlas/ui";
@@ -38,6 +39,7 @@ type View =
   | { kind: "wizard" }
   | { kind: "archetype"; id: string }
   | { kind: "volume"; key: string }
+  | { kind: "ship" }
   | { kind: "brief" };
 
 export function Workbench() {
@@ -103,6 +105,14 @@ export function Workbench() {
           >
             Workbench
           </button>
+          <button
+            type="button"
+            onClick={() => setView({ kind: "ship" })}
+            className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-3 py-1.5 text-sm ${view.kind === "ship" ? "bg-gold/15 text-gold-bright" : "text-muted-foreground hover:text-foreground"}`}
+          >
+            <Truck className="h-3.5 w-3.5" />
+            Ship
+          </button>
           {VOLUMES.map((v) => (
             <button
               key={v.key}
@@ -166,6 +176,15 @@ export function Workbench() {
                   setTray={setTray}
                   onBack={() => setView({ kind: "start" })}
                   onVolume={(key) => setView({ kind: "volume", key })}
+                  onShip={() => setView({ kind: "ship" })}
+                />
+              ) : view.kind === "ship" ? (
+                <ShipView
+                  tray={tray}
+                  setTray={setTray}
+                  profile={profile}
+                  constraints={constraints}
+                  destination={destination}
                 />
               ) : (
                 <VolumeBrowser volumeKey={view.key} tray={tray} setTray={setTray} />
@@ -265,6 +284,7 @@ function ArchetypeView({
   setTray,
   onBack,
   onVolume,
+  onShip,
 }: {
   id: string;
   profile: ContextProfile;
@@ -275,6 +295,7 @@ function ArchetypeView({
   setTray: (t: Tray) => void;
   onBack: () => void;
   onVolume: (key: string) => void;
+  onShip: () => void;
 }) {
   const archetype = ALL_ARCHETYPES.find((a) => a.id === id);
   if (!archetype) return null;
@@ -502,7 +523,11 @@ function ArchetypeView({
         <button type="button" onClick={() => onVolume("protocols")} className="text-gold-bright hover:underline">
           the protocols and formats
         </button>{" "}
-        this project has to speak.
+        this project has to speak. Then{" "}
+        <button type="button" onClick={() => onShip()} className="text-gold-bright hover:underline">
+          decide how it ships
+        </button>
+        .
       </section>
     </div>
   );

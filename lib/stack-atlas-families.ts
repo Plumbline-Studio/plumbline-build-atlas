@@ -73,6 +73,10 @@ export const ESTATE_CHECKLIST: ChecklistItem[] = [
     ask: "Where does it physically run, who owns that machine or account, and when was it last patched?",
   },
   {
+    area: "Delivery & release",
+    ask: "How does a change reach production, and how do you undo one? Ask when a rollback was last actually performed, not whether it is possible. \"Someone FTPs it up\" is the finding.",
+  },
+  {
     area: "Integrations",
     ask: "What else touches it? Every downstream consumer is a stakeholder in any change you propose.",
   },

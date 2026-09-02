@@ -92,22 +92,51 @@ scripts/                      brand marks + delivery edge validation (prebuild)
 
 ## Weaving into the Plumbline Console
 
-**This repo is the source of truth.** The Console (`plumbline-dashboard`)
-carries its own copy of the data files and a `/dashboard/stack-atlas` page;
-when the atlas changes here, sync by copying:
+**This repo is the source of truth for the atlas's data and engines.** Where
+the output goes has changed, and the previous version of this section was
+stale in three ways — recorded here rather than quietly rewritten, because
+anyone who read it before would otherwise repeat the mistake:
 
-- `lib/stack-atlas*.ts` and `lib/engine.ts` → the Console's `lib/` (verbatim;
-  they have no dependencies beyond each other).
-- `components/atlas/*` → the Console, swapping the local primitives in
-  `components/atlas/ui.tsx` for the Console's real `@/components/ui/*`. The
-  Tailwind token vocabulary is already identical.
+- The `plumbline-dashboard` **app is retired**. The Command Board — a Supabase
+  Edge Function rendering live from the database on every load — replaced it.
+  There is no longer a Next.js app to copy component files into.
+- There is **no `engagement_stack_evals` table**. There never was, in the
+  current project.
+- There is **no `recordStackEval` server action**, because the app that would
+  have held it is gone.
 
-Two things the Console should do differently, by design:
+`repos.language` *does* exist, so the derive-don't-ask idea was half right.
 
-- **Derive context instead of asking.** `ContextProfile.estate` should come
-  from `engagement_stack_evals` rows and the synced `repos.language` field —
-  the dashboard already knows the estate. `profile.org` can come from the
-  client record.
-- **Persist the brief.** The standalone site keeps profile and tray in
-  `localStorage`; the Console records the finished decision through its
-  `recordStackEval` server action, attached to an engagement.
+### What actually integrates
+
+The atlas writes to Supabase (`ghddsckqbwrjsjvbjwya`) and the board picks it up
+on the next load. **Nothing is republished** — if the board looks stale, the fix
+is a database write.
+
+| Table / view | Holds |
+|---|---|
+| `stack_destinations` | One row per engagement or venture: the trajectory the Destination step captures |
+| `stack_evals` | The finished brief — picks, reasons, flags, the delivery chain, and the lock-in ledger |
+| `stack_context` (view) | What the atlas should **derive rather than ask**: estate from `repos.language` grouped by venture, org posture from `engagements.client_posture`, horizon and growth hints from `ventures.kind` / `audience` / `stage` |
+| `agent_registry` | One row per agent, with a trigger refusing two enabled agents that claim the same artefact in `writes[]` — one writer per artefact, as a constraint rather than advice |
+
+`board_payload()` carries a `stack` object per engagement — the destination and
+the open one-way doors — added additively, with every pre-existing key
+untouched.
+
+### Two things the Console should still do differently, by design
+
+- **Derive context instead of asking.** `ContextProfile.estate` and the
+  destination's opening guesses should come from `stack_context`; the dashboard
+  already knows the estate, and asking Kyle to retype it is asking him to
+  restate what the database can answer.
+- **Persist the brief.** The standalone site keeps profile, destination and
+  tray in `localStorage`. Attached to an engagement, the finished decision
+  belongs in `stack_evals`, and the delivery chain can additionally be emitted
+  into `op_flows` as a Mermaid diagram with a sign-off — which is what that
+  table exists for.
+
+Components still copy across as before: `lib/*.ts` verbatim (no dependencies
+beyond each other), `components/atlas/*` with the local primitives in
+`components/atlas/ui.tsx` swapped for the real `@/components/ui/*`. The
+Tailwind token vocabulary is already identical.

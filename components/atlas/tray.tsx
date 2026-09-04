@@ -2,7 +2,9 @@
 
 import { AlertTriangle, FileText, X } from "lucide-react";
 
+import type { Destination } from "@/lib/destination";
 import {
+  EMPTY_TRAY,
   trayConflicts,
   type Constraints,
   type ContextProfile,
@@ -30,19 +32,25 @@ export function TrayRail({
   setTray,
   profile,
   constraints,
+  destination,
   onBrief,
 }: {
   tray: Tray;
   setTray: (t: Tray) => void;
   profile: ContextProfile;
   constraints: Constraints;
+  destination: Destination | null;
   onBrief: () => void;
 }) {
   const archetype = tray.archetypeId
     ? ALL_ARCHETYPES.find((a) => a.id === tray.archetypeId)
     : null;
-  const conflicts = trayConflicts(tray, profile, constraints);
-  const filled = SLOTS.filter((s) => tray[s.key]).length + (tray.integrations.length > 0 ? 1 : 0);
+  const conflicts = trayConflicts(tray, profile, constraints, destination);
+  const filled =
+    SLOTS.filter((s) => tray[s.key]).length +
+    (tray.integrations.length > 0 ? 1 : 0) +
+    (tray.delivery.length > 0 ? 1 : 0) +
+    (tray.agentic.length > 0 ? 1 : 0);
 
   return (
     <aside className="space-y-3 rounded-lg border border-border bg-card/60 p-4">
@@ -51,18 +59,7 @@ export function TrayRail({
         {filled > 0 || archetype ? (
           <button
             type="button"
-            onClick={() =>
-              setTray({
-                archetypeId: null,
-                language: null,
-                framework: null,
-                data: null,
-                hosting: null,
-                auth: null,
-                integrations: [],
-                rationale: "",
-              })
-            }
+            onClick={() => setTray(EMPTY_TRAY)}
             className="text-xs text-muted-foreground hover:text-foreground"
           >
             Clear
@@ -125,6 +122,57 @@ export function TrayRail({
                     onClick={() =>
                       setTray({ ...tray, integrations: tray.integrations.filter((x) => x !== i) })
                     }
+                    className="text-muted-foreground hover:text-foreground"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="rounded-md border border-border/70 px-2.5 py-1.5">
+          <span className="kpi-label">Delivery</span>
+          {tray.delivery.length === 0 ? (
+            <p className="text-sm text-muted-foreground/60">—</p>
+          ) : (
+            <div className="mt-1 flex flex-wrap gap-1">
+              {tray.delivery.map((i) => (
+                <span
+                  key={i}
+                  className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-xs"
+                >
+                  {i}
+                  <button
+                    type="button"
+                    aria-label={`Remove ${i}`}
+                    onClick={() => setTray({ ...tray, delivery: tray.delivery.filter((x) => x !== i) })}
+                    className="text-muted-foreground hover:text-foreground"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="rounded-md border border-border/70 px-2.5 py-1.5">
+          <span className="kpi-label">Agentic</span>
+          {tray.agentic.length === 0 ? (
+            <p className="text-sm text-muted-foreground/60">—</p>
+          ) : (
+            <div className="mt-1 flex flex-wrap gap-1">
+              {tray.agentic.map((i) => (
+                <span
+                  key={i}
+                  className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-xs"
+                >
+                  {i}
+                  <button
+                    type="button"
+                    aria-label={`Remove ${i}`}
+                    onClick={() => setTray({ ...tray, agentic: tray.agentic.filter((x) => x !== i) })}
                     className="text-muted-foreground hover:text-foreground"
                   >
                     <X className="h-3 w-3" />

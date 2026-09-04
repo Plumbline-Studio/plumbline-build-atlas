@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ArrowLeft, HelpCircle, Home } from "lucide-react";
+import { ArrowLeft, Compass, HelpCircle, Home, Truck } from "lucide-react";
 
 import {
   DEFAULT_CONSTRAINTS,
@@ -14,6 +14,7 @@ import {
   type ContextProfile,
   type Tray,
 } from "@/lib/engine";
+import { describeDestination, type Destination } from "@/lib/destination";
 import type { ProjectArchetype } from "@/lib/stack-atlas";
 import { WEIGHT_ACCENT } from "@/lib/stack-atlas";
 import {
@@ -24,6 +25,8 @@ import {
 } from "@/lib/stack-atlas-families";
 import { Brief } from "@/components/atlas/brief";
 import { ContextPanel } from "@/components/atlas/context-panel";
+import { DestinationStep } from "@/components/atlas/destination";
+import { ShipView } from "@/components/atlas/ship";
 import { Mark } from "@/components/atlas/mark";
 import { TrayRail } from "@/components/atlas/tray";
 import { Badge, Button, SectionLabel } from "@/components/atlas/ui";
@@ -31,10 +34,12 @@ import { REFERENCE_TOTAL, VOLUMES, VolumeBrowser } from "@/components/atlas/volu
 import { Wizard } from "@/components/atlas/wizard";
 
 type View =
+  | { kind: "destination" }
   | { kind: "start" }
   | { kind: "wizard" }
   | { kind: "archetype"; id: string }
   | { kind: "volume"; key: string }
+  | { kind: "ship" }
   | { kind: "brief" };
 
 export function Workbench() {
@@ -42,6 +47,9 @@ export function Workbench() {
   const [profile, setProfile] = useState<ContextProfile>(DEFAULT_PROFILE);
   const [constraints, setConstraints] = useState<Constraints>(DEFAULT_CONSTRAINTS);
   const [tray, setTray] = useState<Tray>(EMPTY_TRAY);
+  // null is a first-class value here: "no destination set" is a real state the
+  // ranking reads, not an empty form waiting to be filled.
+  const [destination, setDestination] = useState<Destination | null>(null);
   const [hydrated, setHydrated] = useState(false);
 
   // localStorage round-trip after mount, so SSR markup stays deterministic.
@@ -49,6 +57,7 @@ export function Workbench() {
     setProfile(load("profile", DEFAULT_PROFILE));
     setConstraints(load("constraints", DEFAULT_CONSTRAINTS));
     setTray(load("tray", EMPTY_TRAY));
+    setDestination(load<Destination | null>("destination", null));
     setHydrated(true);
   }, []);
   useEffect(() => {
@@ -60,6 +69,9 @@ export function Workbench() {
   useEffect(() => {
     if (hydrated) save("tray", tray);
   }, [tray, hydrated]);
+  useEffect(() => {
+    if (hydrated) save("destination", destination);
+  }, [destination, hydrated]);
 
   function openArchetype(id: string) {
     setView({ kind: "archetype", id });
@@ -80,10 +92,26 @@ export function Workbench() {
         <nav className="ml-auto flex items-center gap-1 overflow-x-auto">
           <button
             type="button"
+            onClick={() => setView({ kind: "destination" })}
+            className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-3 py-1.5 text-sm ${view.kind === "destination" ? "bg-gold/15 text-gold-bright" : "text-muted-foreground hover:text-foreground"}`}
+          >
+            <Compass className="h-3.5 w-3.5" />
+            {destination ? "Destination" : "Set destination"}
+          </button>
+          <button
+            type="button"
             onClick={() => setView({ kind: "start" })}
             className={`rounded-md px-3 py-1.5 text-sm ${view.kind === "start" || view.kind === "archetype" || view.kind === "wizard" ? "bg-gold/15 text-gold-bright" : "text-muted-foreground hover:text-foreground"}`}
           >
             Workbench
+          </button>
+          <button
+            type="button"
+            onClick={() => setView({ kind: "ship" })}
+            className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-3 py-1.5 text-sm ${view.kind === "ship" ? "bg-gold/15 text-gold-bright" : "text-muted-foreground hover:text-foreground"}`}
+          >
+            <Truck className="h-3.5 w-3.5" />
+            Ship
           </button>
           {VOLUMES.map((v) => (
             <button
@@ -104,6 +132,7 @@ export function Workbench() {
             tray={tray}
             profile={profile}
             constraints={constraints}
+            destination={destination}
             onBack={() => setView(tray.archetypeId ? { kind: "archetype", id: tray.archetypeId } : { kind: "start" })}
           />
         </main>
@@ -120,7 +149,19 @@ export function Workbench() {
 
           <main className="grid gap-6 pt-6 lg:grid-cols-[1fr,20rem]">
             <div className="min-w-0">
-              {view.kind === "start" ? (
+              {view.kind === "destination" ? (
+                <DestinationStep
+                  initial={destination}
+                  onDone={(d) => {
+                    setDestination(d);
+                    setView({ kind: "start" });
+                  }}
+                  onSkip={() => {
+                    setDestination(null);
+                    setView({ kind: "start" });
+                  }}
+                />
+              ) : view.kind === "start" ? (
                 <StartGrid onOpen={openArchetype} onWizard={() => setView({ kind: "wizard" })} />
               ) : view.kind === "wizard" ? (
                 <Wizard onPick={openArchetype} onBack={() => setView({ kind: "start" })} />
@@ -129,10 +170,21 @@ export function Workbench() {
                   id={view.id}
                   profile={profile}
                   constraints={constraints}
+                  destination={destination}
+                  onDestination={() => setView({ kind: "destination" })}
                   tray={tray}
                   setTray={setTray}
                   onBack={() => setView({ kind: "start" })}
                   onVolume={(key) => setView({ kind: "volume", key })}
+                  onShip={() => setView({ kind: "ship" })}
+                />
+              ) : view.kind === "ship" ? (
+                <ShipView
+                  tray={tray}
+                  setTray={setTray}
+                  profile={profile}
+                  constraints={constraints}
+                  destination={destination}
                 />
               ) : (
                 <VolumeBrowser volumeKey={view.key} tray={tray} setTray={setTray} />
@@ -145,6 +197,7 @@ export function Workbench() {
                 setTray={setTray}
                 profile={profile}
                 constraints={constraints}
+                destination={destination}
                 onBrief={() => setView({ kind: "brief" })}
               />
             </div>
@@ -225,23 +278,29 @@ function ArchetypeView({
   id,
   profile,
   constraints,
+  destination,
+  onDestination,
   tray,
   setTray,
   onBack,
   onVolume,
+  onShip,
 }: {
   id: string;
   profile: ContextProfile;
   constraints: Constraints;
+  destination: Destination | null;
+  onDestination: () => void;
   tray: Tray;
   setTray: (t: Tray) => void;
   onBack: () => void;
   onVolume: (key: string) => void;
+  onShip: () => void;
 }) {
   const archetype = ALL_ARCHETYPES.find((a) => a.id === id);
   if (!archetype) return null;
   const isAudit = archetype.id === "legacy-audit";
-  const ranked = rankOptions(archetype, profile, constraints);
+  const ranked = rankOptions(archetype, profile, constraints, destination);
   const contextActive =
     profile.estate.length > 0 ||
     constraints.team.length > 0 ||
@@ -324,8 +383,27 @@ function ArchetypeView({
             <b className="text-foreground">Context</b> above and the order re-argues itself.
           </p>
         ) : null}
+        {!isAudit ? (
+          destination ? (
+            <p className="mb-2.5 rounded-md border border-gold/30 bg-gold/5 px-3 py-2 text-xs text-muted-foreground">
+              <b className="text-gold-bright">Ranked for the destination.</b>{" "}
+              {describeDestination(destination)}{" "}
+              <button type="button" onClick={onDestination} className="text-gold-bright hover:underline">
+                Change
+              </button>
+            </p>
+          ) : (
+            <p className="mb-2.5 text-xs text-muted-foreground">
+              Ranked on today only —{" "}
+              <button type="button" onClick={onDestination} className="text-gold-bright hover:underline">
+                set a destination
+              </button>{" "}
+              and each option also gets scored against where this has to end up.
+            </p>
+          )
+        ) : null}
         <div className="space-y-2.5">
-          {ranked.map(({ option, score, reasons, houseStack }, idx) => {
+          {ranked.map(({ option, score, reasons, houseStack, scoreThen, destinationReasons: destReasons, trajectory }, idx) => {
             const inTray =
               tray.language === option.language && tray.framework === option.framework;
             return (
@@ -344,9 +422,29 @@ function ArchetypeView({
                       <Home className="mr-1 h-3 w-3" /> House stack
                     </Badge>
                   ) : null}
-                  <span className="ml-auto font-mono text-xs text-muted-foreground">
-                    {score > 0 ? "+" : ""}
-                    {score}
+                  <span className="ml-auto flex items-baseline gap-1.5 font-mono text-xs text-muted-foreground">
+                    <span title="Scored against the project today">
+                      {score > 0 ? "+" : ""}
+                      {score}
+                    </span>
+                    {scoreThen !== null ? (
+                      <>
+                        <span aria-hidden className="opacity-50">&rarr;</span>
+                        <span
+                          title="Scored against the destination"
+                          className={
+                            scoreThen < score - 4
+                              ? "text-rose-400"
+                              : scoreThen > score + 4
+                                ? "text-emerald-400"
+                                : "text-muted-foreground"
+                          }
+                        >
+                          {scoreThen > 0 ? "+" : ""}
+                          {scoreThen}
+                        </span>
+                      </>
+                    ) : null}
                   </span>
                   <Button
                     variant={idx === 0 ? "solid" : "outline"}
@@ -369,6 +467,28 @@ function ArchetypeView({
                     </li>
                   ))}
                 </ul>
+                {destReasons.length > 0 ? (
+                  <div className="mt-2.5 border-t border-border/60 pt-2">
+                    <p className="mb-1 font-mono text-[0.6rem] uppercase tracking-wider text-gold">
+                      At the destination
+                    </p>
+                    <ul className="space-y-0.5">
+                      {destReasons.slice(0, 4).map((r, i) => (
+                        <li key={i} className="flex gap-2 text-xs">
+                          <span
+                            className={`w-8 shrink-0 text-right font-mono ${r.delta >= 0 ? "text-emerald-400" : "text-rose-400"}`}
+                          >
+                            {r.delta > 0 ? `+${r.delta}` : r.delta}
+                          </span>
+                          <span className="text-muted-foreground">{r.text}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+                {trajectory ? (
+                  <p className="mt-2 text-xs italic text-muted-foreground">{trajectory}</p>
+                ) : null}
               </div>
             );
           })}
@@ -403,7 +523,11 @@ function ArchetypeView({
         <button type="button" onClick={() => onVolume("protocols")} className="text-gold-bright hover:underline">
           the protocols and formats
         </button>{" "}
-        this project has to speak.
+        this project has to speak. Then{" "}
+        <button type="button" onClick={() => onShip()} className="text-gold-bright hover:underline">
+          decide how it ships
+        </button>
+        .
       </section>
     </div>
   );

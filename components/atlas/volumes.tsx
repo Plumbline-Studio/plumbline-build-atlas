@@ -8,6 +8,12 @@ import {
   LANGUAGES,
   LANGUAGE_CATEGORIES,
 } from "@/lib/stack-atlas-languages";
+import { AGENTIC, AGENTIC_GROUPS } from "@/lib/stack-atlas-agentic";
+import {
+  DELIVERY,
+  DELIVERY_GROUPS,
+  SCALE_LABEL,
+} from "@/lib/stack-atlas-delivery";
 import {
   AUTH,
   AUTH_GROUPS,
@@ -27,6 +33,7 @@ import { Badge, Chip, toneClass } from "@/components/atlas/ui";
 type SlotAction =
   | { slot: "language" | "data" | "hosting" | "auth"; value: string }
   | { slot: "integrations"; value: string }
+  | { slot: "delivery" | "agentic"; value: string }
   | { slot: "base"; stackName: string };
 
 interface RefRow {
@@ -159,6 +166,67 @@ export const VOLUMES: Volume[] = [
       action: infraAction(i.group, i.name),
     })),
   },
+  {
+    key: "delivery",
+    label: "Delivery",
+    placeholder: "Pipeline, container, secret store, dashboard…",
+    groups: DELIVERY_GROUPS,
+    rows: DELIVERY.map((d) => ({
+      name: d.name,
+      group: d.group,
+      toneLabel: d.standing,
+      chip: SCALE_LABEL[d.scale],
+      what: d.whatItIs,
+      pairs: [
+        ["Where you meet it", d.whereYouMeetIt],
+        ["When you need it", d.whenYouNeedIt],
+        ["Not yet, if", d.notYet],
+        [
+          "Fits with",
+          [
+            d.needs.length ? `needs ${d.needs.join(", ")}` : "",
+            d.feeds.length ? `feeds ${d.feeds.join(", ")}` : "",
+            d.instead.length ? `instead of ${d.instead.join(", ")}` : "",
+          ]
+            .filter(Boolean)
+            .join(" · ") || "stands alone",
+        ],
+      ] as [string, string][],
+      risk: d.watchFor,
+      marked: true,
+      action: { slot: "delivery", value: d.name },
+    })),
+  },
+  {
+    key: "agentic",
+    label: "Agentic",
+    placeholder: "Context, routing, execution, coordination, budget…",
+    groups: AGENTIC_GROUPS,
+    rows: AGENTIC.map((a) => ({
+      name: a.name,
+      group: a.group,
+      toneLabel: a.standing,
+      chip: a.regime === "both" ? "Either regime" : a.regime === "sequential" ? "Sequential" : "Concurrent",
+      what: a.whatItIs,
+      pairs: [
+        ["Where you meet it", a.whereYouMeetIt],
+        ["When you need it", a.whenYouNeedIt],
+        ["Not yet, if", a.notYet],
+        [
+          "Fits with",
+          [
+            a.needs.length ? `needs ${a.needs.join(", ")}` : "",
+            a.feeds.length ? `feeds ${a.feeds.join(", ")}` : "",
+            a.instead.length ? `instead of ${a.instead.join(", ")}` : "",
+          ]
+            .filter(Boolean)
+            .join(" · ") || "stands alone",
+        ],
+      ] as [string, string][],
+      risk: a.watchFor,
+      action: { slot: "agentic", value: a.name },
+    })),
+  },
 ];
 
 export const REFERENCE_TOTAL = VOLUMES.reduce((n, v) => n + v.rows.length, 0);
@@ -214,9 +282,10 @@ export function VolumeBrowser({
       });
       return;
     }
-    if (action.slot === "integrations") {
-      if (!tray.integrations.includes(action.value)) {
-        setTray({ ...tray, integrations: [...tray.integrations, action.value] });
+    if (action.slot === "integrations" || action.slot === "delivery" || action.slot === "agentic") {
+      const current = tray[action.slot];
+      if (!current.includes(action.value)) {
+        setTray({ ...tray, [action.slot]: [...current, action.value] });
       }
       return;
     }
@@ -226,7 +295,8 @@ export function VolumeBrowser({
   function isInTray(action?: SlotAction): boolean {
     if (!action) return false;
     if (action.slot === "base") return false;
-    if (action.slot === "integrations") return tray.integrations.includes(action.value);
+    if (action.slot === "integrations" || action.slot === "delivery" || action.slot === "agentic")
+      return tray[action.slot].includes(action.value);
     return tray[action.slot] === action.value;
   }
 

@@ -15,7 +15,8 @@
 // Every score adjustment carries its reason as a sentence. The ranking is only
 // trustworthy if you can see why it moved.
 
-import type { ProjectArchetype, StackOption } from "@/lib/stack-atlas";
+import { destinationReasons, growthFactor, trajectoryNote, type Destination } from "@/lib/destination";
+import { ARCHETYPES as ALL_ARCHETYPES_FOR_WEIGHT, type ProjectArchetype, type StackOption } from "@/lib/stack-atlas";
 import { STACKS, type StackEntry } from "@/lib/stack-atlas-reference";
 
 /* ------------------------------- profile -------------------------------- */
@@ -158,9 +159,23 @@ export interface Reason {
 
 export interface ScoredOption {
   option: StackOption;
+  /**
+   * Score against the project as it is today. Still called `score` because it
+   * is what every existing caller means, and because with no destination set
+   * it is the only score there is.
+   */
   score: number;
   reasons: Reason[];
   houseStack: boolean;
+  /**
+   * The second pass: the same option scored against where the project is
+   * going. Null when no destination is set — the atlas does not guess at a
+   * trajectory nobody gave it.
+   */
+  scoreThen: number | null;
+  destinationReasons: Reason[];
+  /** One sentence on what the gap between the two passes means. */
+  trajectory: string | null;
 }
 
 // Org-fit adjustments per token. Sparse by design: only where the org type
@@ -302,6 +317,7 @@ export function rankOptions(
   archetype: ProjectArchetype,
   profile: ContextProfile,
   constraints: Constraints,
+  destination: Destination | null = null,
 ): ScoredOption[] {
   const estate = estateTokens(profile);
   const estateRuntimes = new Set([...estate.keys()].filter((t) => RUNTIME_TOKENS.has(t)));
@@ -376,15 +392,32 @@ export function rankOptions(
     const houseStack =
       majorityTokens.size > 0 && [...tokens].filter((t) => majorityTokens.has(t)).length >= 2;
 
+    // Second pass. The destination's reasons are *added* to the present-tense
+    // ones rather than replacing them: the question is not "what would we pick
+    // if we were already there", it is "what does today's answer cost us on the
+    // way". Sorting still uses the present-tense score, so an unset destination
+    // changes nothing about the order.
+    const destReasons = destinationReasons(option, destination, tokens);
+    const scoreThen = destination ? score + destReasons.reduce((n, r) => n + r.delta, 0) : null;
+
     return {
       option,
       score,
       houseStack,
       reasons: reasons.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta)),
+      scoreThen,
+      destinationReasons: destReasons.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta)),
+      trajectory: scoreThen === null ? null : trajectoryNote(score, scoreThen, destination),
     };
   });
 
-  return scored.sort((a, b) => b.score - a.score);
+  // Ranked by where the project is going when a destination is set, and by
+  // today when it is not. This is the whole behavioural change: the same
+  // archetype can now surface a different winner because the answer to
+  // "for how long" changed.
+  return scored.sort((a, b) =>
+    a.scoreThen !== null && b.scoreThen !== null ? b.scoreThen - a.scoreThen : b.score - a.score,
+  );
 }
 
 /* --------------------------------- tray --------------------------------- */
@@ -397,6 +430,10 @@ export interface Tray {
   hosting: string | null;
   auth: string | null;
   integrations: string[];
+  /** How it ships and how you watch it — names from the delivery volume. */
+  delivery: string[];
+  /** How the AI work is coordinated — names from the agentic volume. */
+  agentic: string[];
   /** Free-text: the constraint that decided it. */
   rationale: string;
 }
@@ -409,6 +446,8 @@ export const EMPTY_TRAY: Tray = {
   hosting: null,
   auth: null,
   integrations: [],
+  delivery: [],
+  agentic: [],
   rationale: "",
 };
 
@@ -419,15 +458,21 @@ export interface Conflict {
 
 const AVOID_PROTOCOLS = ["FTP", "Telnet", "TFTP", "HTTP/1.1", "XML-RPC", "LDAP", "HTTP Basic auth", "NTLM"];
 
+/** Archetypes the atlas itself weights Small — computed once, not hand-listed. */
+const SMALL_ARCHETYPES = new Set(
+  ALL_ARCHETYPES_FOR_WEIGHT.filter((a) => a.weight === "Small").map((a) => a.id),
+);
+
 /** The tray argues back. Rules only fire on data the tray actually holds. */
 export function trayConflicts(
   tray: Tray,
   profile: ContextProfile,
   constraints: Constraints,
+  destination: Destination | null = null,
 ): Conflict[] {
   const out: Conflict[] = [];
   const all = tokensOf(
-    [tray.language, tray.framework, tray.data, tray.hosting, tray.auth, ...tray.integrations]
+    [tray.language, tray.framework, tray.data, tray.hosting, tray.auth, ...tray.integrations, ...tray.delivery, ...tray.agentic]
       .filter(Boolean)
       .join(" "),
   );
@@ -467,6 +512,105 @@ export function trayConflicts(
       severity: "caution",
       text: "PCI scope with no processor in the stack — add Stripe or a platform, or budget a QSA.",
     });
+  }
+
+  // Delivery rules. The tray argues about how the thing ships, not just what
+  // it is made of — which is the half that used to be invisible.
+  {
+    const d = new Set(tray.delivery);
+    const has = (...names: string[]) => names.some((n) => d.has(n));
+
+    // The recording's own car-dashboard line, made mechanical.
+    if (d.has("Grafana") && !has("Prometheus", "Loki", "ELK / OpenSearch", "OpenTelemetry")) {
+      out.push({
+        severity: "finding",
+        text: "Grafana collects nothing — it is the dashboard in a car, and the engine and sensors produce the data. With no Prometheus, Loki or OpenTelemetry in the chain this is an empty screen.",
+      });
+    }
+
+    const INTEGRATE = ["GitHub Actions", "GitLab CI/CD", "Jenkins", "CircleCI", "Azure Pipelines", "Argo CD"];
+    if (tray.delivery.length > 0 && !INTEGRATE.some((n) => d.has(n))) {
+      out.push({
+        severity: "finding",
+        text: "Nothing runs on push. Without a pipeline there is no rollback and no record of what shipped — which is the finding an auditor writes down, and the reason a bad Friday becomes a bad weekend.",
+      });
+    }
+
+    if (has("Kubernetes", "Managed Kubernetes", "Helm", "Argo CD")) {
+      if (constraints.maintainer === "client-nontech") {
+        out.push({
+          severity: "finding",
+          text: "Kubernetes with nobody technical at the client: this hands over a platform team's job to people who do not have one. Say what happens on day one after the engagement ends.",
+        });
+      } else if (tray.archetypeId && SMALL_ARCHETYPES.has(tray.archetypeId)) {
+        out.push({
+          severity: "caution",
+          text: "Cluster operations on a Small project is more machine than the problem needs. If it is a deliberate investment in the next three projects, write that down — otherwise a platform runtime does this for free.",
+        });
+      }
+    }
+
+    if (has("Terraform", "Vault", "Consul", "Packer", "Nomad")) {
+      out.push({
+        severity: "caution",
+        text: "HashiCorp tooling is BUSL-1.1 and IBM-owned since 2025. Free for internal use; wrapping it in something you sell is a licensing conversation. OpenTofu and OpenBao are the MPL forks under the Linux Foundation.",
+      });
+    }
+
+    if (d.has("ELK / OpenSearch") && constraints.budget === "lean") {
+      out.push({
+        severity: "caution",
+        text: "Elasticsearch is memory- and storage-hungry, and the bill grows with log volume rather than traffic. On a lean budget this is the line item that outgrows the application it watches — Loki indexes labels instead and costs a fraction.",
+      });
+    }
+
+    if (d.has("Jenkins")) {
+      out.push({
+        severity: "caution",
+        text: "Jenkins is losing share every year and the cost is the plugin surface — teams leave when a plugin breaks an upgrade, or when the one person who understood the controller resigns. Fine to inherit; choosing it new needs an argument.",
+      });
+    }
+  }
+
+  // Destination rules. These can only fire once someone has said where the
+  // project is going, which is exactly why they were impossible before.
+  if (destination) {
+    if (destination.horizon === "platform" && (all.has("mongo") || all.has("firebase"))) {
+      out.push({
+        severity: "finding",
+        text: "A platform horizon on a database with no row-level security: every tenant boundary is application code, and a platform has thousands of them. This is the one to change while changing it is still cheap.",
+      });
+    }
+    if (destination.horizon === "platform" && (all.has("nocode") || all.has("wordpress") || all.has("shopify"))) {
+      out.push({
+        severity: "finding",
+        text: "Nobody builds on top of this. If others are meant to extend it, a hosted site builder is the wrong foundation — say so now rather than after the first integration request.",
+      });
+    }
+    if (destination.autonomy === "unattended" && all.has("nocode")) {
+      out.push({
+        severity: "finding",
+        text: "Unattended and unobservable. When an automation canvas fails at 3am there is no stack trace and no test to write — pick something you can debug asleep.",
+      });
+    }
+    if (destination.sovereignty === "portable" && (all.has("supabase") || all.has("firebase") || all.has("vercel") || all.has("shopify"))) {
+      out.push({
+        severity: "caution",
+        text: "Portable is the stated destination, and core data or core behaviour sits inside one vendor. That is a fine trade — but it is a trade, and it belongs in the brief.",
+      });
+    }
+    if (destination.growth === "tenants" && all.has("sqlite")) {
+      out.push({
+        severity: "caution",
+        text: "One writer at a time, and tenants are the growth axis. The ceiling arrives without warning and it arrives during business hours.",
+      });
+    }
+    if (growthFactor(destination) >= 3 && (all.has("nocode") || all.has("sqlite"))) {
+      out.push({
+        severity: "caution",
+        text: `A ${Math.round(growthFactor(destination))}-order-of-magnitude climb on this foundation is a rebuild, not a scale-up. Budget it deliberately or choose differently now.`,
+      });
+    }
   }
 
   if (profile.estate.length > 0 && tray.language) {
@@ -584,7 +728,12 @@ export function suggestArchetypes(answers: Record<string, string>): { id: string
 
 /* ------------------------------ persistence ----------------------------- */
 
-const KEYS = { profile: "atlas.profile.v1", tray: "atlas.tray.v1", constraints: "atlas.constraints.v1" };
+const KEYS = {
+  profile: "atlas.profile.v1",
+  tray: "atlas.tray.v1",
+  constraints: "atlas.constraints.v1",
+  destination: "atlas.destination.v1",
+};
 
 export function load<T>(key: keyof typeof KEYS, fallback: T): T {
   if (typeof window === "undefined") return fallback;
